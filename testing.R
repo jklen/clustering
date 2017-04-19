@@ -2,6 +2,7 @@
 library(ggplot2)
 library(colorspace)
 library(scales)
+library(fpc)
 
 data("iris")
 str(iris)
@@ -11,25 +12,36 @@ colnames(iris)[6:9] <- c('Sepal.Length.Scales', 'Sepal.Width.Scaled',
                          'Petal.Length.Scaled', 'Petal.Width.Scaled')
 iris_test <- iris[6:9]
 
-kmeansHH <- function(x, nclusters){
+kmeansHH <- function(x, nclusters = NULL){
   
   df <- x
   nvars <- length(df)
+  optimal_nclusters <- F
+  nclusters <- ifelse(nclusters == 1, 2, nclusters)
+  kms <- list()
+
+  if (is.null(nclusters)){
+    
+    optimal_nclusters <- T
+    nclusters <- 25
+    calHar <- numeric()
+    
+  }
   
   for (i in 1:(nclusters - 1)){
     
     print(paste('run:', i))
     print(df)
     
-    variance <- sapply(df, var) # vyratm rozptyl premennych
+    variance <- sapply(df, var) # variables variance
     print('variables variance')
     print(variance)
     
-    max_var <- variance[variance == max(variance)] # ziskam maximalny rozptyl a premennu
+    max_var <- variance[variance == max(variance)] # variable with maximum variance
     print('maximum variance and variable')
     print(max_var)
     
-    max_var_mean <- mean(df[[names(max_var)]]) # ziskam priemer tejto premennej
+    max_var_mean <- mean(df[[names(max_var)]]) # mean of this variable
     print('mean of this variable')
     print(max_var_mean)
     
@@ -38,45 +50,67 @@ kmeansHH <- function(x, nclusters){
     print('cent1')
     print(cent1)
     
-    cent2 <- sapply(df[df[names(max_var)] >= max_var_mean,], mean) # podla jej priemeru vyratam 1. a 2. centroid
+    cent2 <- sapply(df[df[names(max_var)] >= max_var_mean,], mean) # based on its value, calculate 1st and 2nd centroid
     print('cent2')
     print(cent2)
     
     if (i == 1){
       
-      cent <- matrix(rbind(cent1, cent2), ncol = nvars)
+      cent <- rbind(cent1, cent2)
       
     } else {
       
-      cent <- matrix(rbind(cent, cent1), ncol = nvars)
-      cent <- matrix(rbind(cent, cent2), ncol = nvars)
+      cent <- rbind(cent, cent1)
+      cent <- rbind(cent, cent2)
       
     }
     
     print(cent)
-    km <- kmeans(x = x, centers = cent, algorithm = 'Lloyd')
+    kms <- append(kms, list(kmeans(x = x, centers = cent, algorithm = 'Lloyd')))
     print('unique clusters')
-    print(unique(km$cluster))
+    print(unique(kms[[i]]$cluster))
+    
+    if (optimal_nclusters == T){
+
+      calHar <- append(calHar, calinhara(x, kms[[i]]$cluster))
+      
+      print('calinski-harabasz index:')
+      print(calHar)
+      
+      if (i >= 2){
+        
+        if (calHar[i] < calHar[i - 1]){
+          
+          km <- kms[[i -1]]
+          
+          return(km)
+          
+        }
+
+        
+      }
+      
+    }
     
     if (i != (nclusters - 1)){
       
       print('clusters withinss')
-      print(km$withinss)
+      print(kms[[i]]$withinss)
     
-      high_var_cluster <- which(km$withinss == max(km$withinss)) # index (cislo) clustra s najvacsim withinss
+      high_var_cluster <- which(kms[[i]]$withinss == max(kms[[i]]$withinss)) # cluster with highest withinss
       print(paste('cluster nr. with highest withinss:', high_var_cluster))
       
-      low_var_cluster <- which(km$withinss != max(km$withinss)) # index (cisla) ostatnych clustrov
+      low_var_cluster <- which(kms[[i]]$withinss != max(kms[[i]]$withinss)) # remaining clusters
       print('clusters with not maximum withinss')
       print(low_var_cluster)
       
       
-      cent <- km$centers[low_var_cluster,] # ponecham len centroidy s mensou ako maximalnou withinss
+      cent <- kms[[i]]$centers[low_var_cluster,] # keep only centroids of clusters with not highest withinss
       print('centroids to remain')
       print(cent)
       
-      print(km$cluster == high_var_cluster)
-      df <- x[km$cluster == high_var_cluster,] # ponecham data len clustru s maximalnou withinss
+      print(kms[[i]]$cluster == high_var_cluster)
+      df <- x[kms[[i]]$cluster == high_var_cluster,] # keep only data of cluster with highest withinss for next iteration
       
       print('% of data of cluster with maximum withinss')
       print(nrow(df)/nrow(x))
@@ -87,6 +121,8 @@ kmeansHH <- function(x, nclusters){
     print('-----------')
     
   }
+  
+  km <- kms[[nclusters - 1]]
   
   return(km)
   
