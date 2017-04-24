@@ -3,6 +3,7 @@ library(ggplot2)
 library(colorspace)
 library(scales)
 library(fpc)
+library(FactoMineR)
 
 data("iris")
 str(iris)
@@ -17,7 +18,6 @@ kmeansHH <- function(x, nclusters = NULL){
   df <- x
   nvars <- length(df)
   optimal_nclusters <- F
-  nclusters <- ifelse(nclusters == 1, 2, nclusters)
   kms <- list()
 
   if (is.null(nclusters)){
@@ -66,9 +66,12 @@ kmeansHH <- function(x, nclusters = NULL){
     }
     
     print(cent)
-    kms <- append(kms, list(kmeans(x = x, centers = cent, algorithm = 'Lloyd')))
+    kms <- append(kms, list(kmeans(x = x, centers = cent, algorithm = 'Lloyd', iter.max = 100)))
     print('unique clusters')
     print(unique(kms[[i]]$cluster))
+    
+    print('number of iterations')
+    print(kms[[i]]$iter)
     
     if (optimal_nclusters == T){
 
