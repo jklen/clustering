@@ -1,18 +1,19 @@
 
 library(ggplot2)
 library(fpc)
+library(plyr)
 
 kmeansHH3 <- function(x, nclusters = NULL){
   
   df <- x
   optimal_nclusters <- F
-  dfs_list <- list()
   
   if (is.null(nclusters)){
     
     optimal_nclusters <- T
     nclusters <- 10
     calHar <- numeric()
+    dfs_list <- list()
     
   }
 
@@ -55,7 +56,6 @@ kmeansHH3 <- function(x, nclusters = NULL){
       
       df$cluster <- km$cluster
       df$withinss <- ifelse(km$cluster == 1, km$withinss[1], km$withinss[2])
-      # df_toKeep bude df
       df_toKeep <- df
 
     } else {
@@ -68,9 +68,7 @@ kmeansHH3 <- function(x, nclusters = NULL){
         df$withinss <- ifelse(km$cluster == 1, km$withinss[1], km$withinss[2])
         
         # nahradit povodny cluster z celkoveho df_toKeep tymito clustrami
-        #print(df_toKeep[row.names(df_toKeep) %in% row.names(df),])
-        #print(df)
-        
+
         df_toKeep[row.names(df_toKeep) %in% row.names(df),] <- df
       }
       
@@ -80,11 +78,10 @@ kmeansHH3 <- function(x, nclusters = NULL){
     
     if (optimal_nclusters == T){
       
-      #print(df_toKeep)
       dfs_list <- append(dfs_list, list(df_toKeep))
       calHar <- append(calHar, calinhara(df_toKeep[, !(colnames(df_toKeep) %in% c('cluster', 'withinss'))],
                                          df_toKeep$cluster,
-                                         cn = length(unique(df_toKeep$cluster))))# zle vypocita (daj clustre od 1 - asi)
+                                         cn = length(unique(df_toKeep$cluster))))
       print('calinski-harabsz index:')
       print(calHar)
       
@@ -93,6 +90,9 @@ kmeansHH3 <- function(x, nclusters = NULL){
         if (calHar[i] < calHar[i - 1]){
           
           df_toKeep <- dfs_list[[i - 1]]
+          df_toKeep$cluster <- mapvalues(df_toKeep$cluster,
+                                         from = unique(df_toKeep$cluster),
+                                         to = 1:length(unique(df_toKeep$cluster)))
           
           return(df_toKeep)
           
