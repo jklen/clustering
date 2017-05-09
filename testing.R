@@ -13,6 +13,10 @@ colnames(iris)[6:9] <- c('Sepal.Length.Scales', 'Sepal.Width.Scaled',
                          'Petal.Length.Scaled', 'Petal.Width.Scaled')
 iris_test <- iris[6:9]
 
+australian <- read.table('C:/Users/Jaroslav/Datasets/Australian credit approval/australian.dat', sep = ' ')
+australian[, c('V1', 'V4', 'V5', 'V6', 'V8', 'V9', 'V11','V12', 'V15')] <- 
+  lapply(australian[, c('V1', 'V4', 'V5', 'V6', 'V8', 'V9', 'V11','V12', 'V15')], factor)
+
 kmeansHH <- function(x, nclusters = NULL){
   
   df <- x

@@ -1,7 +1,8 @@
 
 library(ggplot2)
-library(fpc)
-library(plyr)
+library(fpc) # calinski-harabasz index
+library(plyr) # mapvalues function
+library(FactoMineR) # MCA
 
 kmeansHH3 <- function(x, nclusters = NULL){
   
@@ -21,17 +22,13 @@ kmeansHH3 <- function(x, nclusters = NULL){
     
     print(paste('run: ', i))
     
-    #if (i ==1){
+    variance <- sapply(df, var) # variables variance
+    print('variable variance:')
+    print(variance)
     
-      variance <- sapply(df, var) # variables variance
-      print('variable variance:')
-      print(variance)
-      
-      max_var <- variance[variance == max(variance)] # variable with maximum variance
-      print('variable with highest variance:')
-      print(max_var)
-      
-    #}
+    max_var <- variance[variance == max(variance)] # variable with maximum variance
+    print('variable with highest variance:')
+    print(max_var)
     
     max_var_mean <- mean(df[[names(max_var)]]) # mean of this variable
     print('mean of variable with highest variance:')
@@ -40,7 +37,7 @@ kmeansHH3 <- function(x, nclusters = NULL){
     cent1 <- sapply(df[df[names(max_var)] >= 0 &
                          df[names(max_var)] < max_var_mean,], mean)
     cent2 <- sapply(df[df[names(max_var)] >= max_var_mean,], mean)
-    cent <- rbind(cent1, cent2)
+    cent <- rbind(cent1, cent2) # centroids for k-means
     
     print('centroids to get 2 clusters:')
     print(cent)
@@ -67,7 +64,7 @@ kmeansHH3 <- function(x, nclusters = NULL){
         
         df$withinss <- ifelse(km$cluster == 1, km$withinss[1], km$withinss[2])
         
-        # nahradit povodny cluster z celkoveho df_toKeep tymito clustrami
+        # replace cluster which was splitted with these clusters
 
         df_toKeep[row.names(df_toKeep) %in% row.names(df),] <- df
       }
@@ -75,6 +72,8 @@ kmeansHH3 <- function(x, nclusters = NULL){
     }
     
     print(paste('df_toKeep rows nr: ', nrow(df_toKeep)))
+    
+    # when finding optimum number of clusters
     
     if (optimal_nclusters == T){
       
@@ -90,6 +89,9 @@ kmeansHH3 <- function(x, nclusters = NULL){
         if (calHar[i] < calHar[i - 1]){
           
           df_toKeep <- dfs_list[[i - 1]]
+          
+          # to have cluster numbering starting 1
+          
           df_toKeep$cluster <- mapvalues(df_toKeep$cluster,
                                          from = unique(df_toKeep$cluster),
                                          to = 1:length(unique(df_toKeep$cluster)))
@@ -107,6 +109,8 @@ kmeansHH3 <- function(x, nclusters = NULL){
     print('number of unique clusters:')
     print(length(unique(df_toKeep$cluster)))
     
+    # plotting
+    
     df_toPlot <- df_toKeep
     df_toPlot$cluster <- as.factor(df_toPlot$cluster)
     print(ggplot(aes(x = Petal.Width.Scaled, y = Petal.Length.Scaled), data = df_toPlot) +
@@ -117,7 +121,7 @@ kmeansHH3 <- function(x, nclusters = NULL){
     
     if (i < nclusters){
     
-      # vypocitat withinss vsetkych clustrov v df_toKeep
+      # get withinss of all clusters in df_toKeep
 
       withinss_byCluster <- by(df_toKeep[, colnames(df_toKeep) == 'withinss'],
                                df_toKeep[, 'cluster'],
@@ -126,21 +130,19 @@ kmeansHH3 <- function(x, nclusters = NULL){
       print('withinss by cluster:')
       print(withinss_byCluster)
       
-      # ziskat cluster s najvacsim withinss
+      # get cluster with highest withinss
 
       max_cluster <- names(sapply(withinss_byCluster, max)[sapply(withinss_byCluster, max) == max(sapply(withinss_byCluster, max))])
       
       print('cluster name, which contains variable with maximum variance')
       print(max_cluster)
       
-      # tento cluster bude ako df do dalsej iteracie
+      # this cluster will be as df into next iteration
       
       df <- df_toKeep[df_toKeep$cluster == max_cluster, !(colnames(df_toKeep) %in% c('cluster', 'withinss'))]
       
       print('structure of dataframe for next iteration')
       print(str(df))
-      
-      # na konci cyklu musim mat cluster, ktory idem delit ako df
 
     } else {
       
@@ -159,6 +161,8 @@ kmeansHH3 <- function(x, nclusters = NULL){
                    centers = last_centroids)
       
       df_toKeep$cluster <- km$cluster
+      
+      # plotting
       
       df_toPlot <- df_toKeep
       df_toPlot$cluster <- as.factor(df_toPlot$cluster)
