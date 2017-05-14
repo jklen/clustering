@@ -5,27 +5,22 @@ library(cluster) # daisy, PAM
 library(dummy)
 library(scales)
 library(StatMatch) # gower.dist
+library(ggplot2)
 
-
-dataset_type <- function(df){
+dataset_type <- function(x){
   
-  # !!!!!!!!!!!!!!!!OPRAVIT!!!!!!!!!!!!
+  df <- x
   
-  class_vector <- sapply(df, class)
+  numeric_var_count <- sum(sapply(df, function(x){is.numeric(x) | is.integer(x)}))
+  dim_var_count <- sum(sapply(df, function(x){is.ordered(x) | is.factor(x)}))
   
-  numeric_cond <- (('numeric' %in% class_vector) | ('integer' %in% class_vector)) & 
-    !('character' %in% class_vector) & !('factor' %in% class_vector)
-  
-  cat_cond <- (('character' %in% class_vector) | ('factor' %in% class_vector)) &
-    !('numeric' %in% class_vector) & !('integer' %in% class_vector)
-  
-  if (numeric_cond){
+  if (numeric_var_count > 0 & dim_var_count == 0){
     
     return('numeric')
     
   } else {
     
-    if (cat_cond){
+    if (dim_var_count > 0 & numeric_var_count == 0){
       
       return('categorical')
       
@@ -36,7 +31,6 @@ dataset_type <- function(df){
     }
     
   }
-  
   
 }
 
@@ -50,16 +44,20 @@ kmeansHH <- function(x, nclusters = NULL){
   #   dataframe with input variables, plus additional variable 'cluster' - entry's assigned cluster
   #     and 'withinss' - clusters within sum of squared
   
+  # !!!!!!!!!! if number of UNIQUE rows too low, run standard kmeans
+  
   df <- x
-  
-  print(dataset_type(df))
-  
+
   # rescaling variables
   
-  #df[sapply(df, is.numeric)] <- lapply(df[sapply(df, is.numeric)], rescale)
-  #df[sapply(df, is.integer)] <- lapply(df[sapply(df, is.integer)], rescale)
+  df[sapply(df, is.numeric)] <- lapply(df[sapply(df, is.numeric)], rescale)
+  df[sapply(df, is.integer)] <- lapply(df[sapply(df, is.integer)], rescale)
   
-  if (dataset_type(df) == 'kok'){
+  print('df:')
+  print(str(df))
+  print(df)
+  
+  if (dataset_type(df) == 'numeric'){
     
     optimal_nclusters <- F
     
@@ -74,26 +72,82 @@ kmeansHH <- function(x, nclusters = NULL){
     
     for (i in 1:nclusters){
       
+      print(paste(i, ' --------------------------------------------------'))
+      
       variance <- sapply(df, var) # variables variance
+      print('variance:')
+      print(str(variance))
       
       max_var <- variance[variance == max(variance)] # variable with maximum variance
+      print('maxvar:')
+      print(str(max_var))
       
       max_var_mean <- mean(df[[names(max_var)]]) # mean of this variable
       
+      print('maxvarmean:')
+      print(str(max_var_mean))
+      
+      print('sapply:')
+      print(class(df[df[names(max_var)] >= 0 &
+                 df[names(max_var)] < max_var_mean, colnames(df), drop = F]))
+      print('nrows where cent1:')
+      print(nrow(df[df[names(max_var)] >= 0 &
+                      df[names(max_var)] < max_var_mean, colnames(df), drop = F]))
+      print('nrows where cent2:')
+      print(nrow(df[df[names(max_var)] >= max_var_mean, colnames(df), drop = F]))
+      
       cent1 <- sapply(df[df[names(max_var)] >= 0 &
-                           df[names(max_var)] < max_var_mean,], mean)
-      cent2 <- sapply(df[df[names(max_var)] >= max_var_mean,], mean)
+                           df[names(max_var)] < max_var_mean, colnames(df), drop = F], mean)
+      cent2 <- sapply(df[df[names(max_var)] >= max_var_mean, colnames(df), drop = F], mean)
       cent <- rbind(cent1, cent2) # centroids for k-means
+      
+      print('2 centroids:')
+      print(cent)
+      
+      print('nrows df:')
+      print(nrow(df))
+      
+      # if there are no splits possible to continue (2 entries), put them in one cluster, run kmeans with all centroids
+      # and finish
+      
+      if (nrow(df) > 2){
       
       km <- kmeans(x = df,
                    #algorithm = 'Lloyd',
                    centers = cent)
+      
+      } else {
+        
+        df$cluster <- max(df_toKeep$cluster) + 1
+        df_toKeep[row.names(df_toKeep) %in% row.names(df),] <- df
+        
+        
+        last_centroids <- by(df_toKeep[, !(colnames(df_toKeep) %in% c('cluster', 'withinss')), drop = F],
+                             df_toKeep[, 'cluster'],
+                             function(x){sapply(x, mean)})
+        
+        print('last centroids:')
+        print(last_centroids)
+        
+        last_centroids <- matrix(unlist(last_centroids), ncol = length(df_toKeep) - 2, byrow = T)
+        
+        km <- kmeans(df_toKeep[, !(colnames(df_toKeep) %in% c('cluster', 'withinss'))],
+                     centers = last_centroids)
+        
+        df_toKeep$cluster <- km$cluster
+        
+        return(df_toKeep)
+        
+      }
       
       if (i == 1){
         
         df$cluster <- km$cluster
         df$withinss <- ifelse(km$cluster == 1, km$withinss[1], km$withinss[2])
         df_toKeep <- df
+        
+        print('1st iteration:')
+        print(df)
         
       } else {
         
@@ -102,6 +156,9 @@ kmeansHH <- function(x, nclusters = NULL){
           df$cluster <- ifelse(km$cluster == 1, max(df_toKeep$cluster) + 1, max(df_toKeep$cluster) + 2)
           
           df$withinss <- ifelse(km$cluster == 1, km$withinss[1], km$withinss[2])
+          
+          print('except last iteration:')
+          print(df)
           
           # replace cluster which was splitted with these clusters
           
@@ -118,6 +175,9 @@ kmeansHH <- function(x, nclusters = NULL){
         calHar <- append(calHar, calinhara(df_toKeep[, !(colnames(df_toKeep) %in% c('cluster', 'withinss'))],
                                            df_toKeep$cluster,
                                            cn = length(unique(df_toKeep$cluster))))
+        
+        print('calhar:')
+        print(calHar)
         
         if (i >= 2){
           
@@ -153,15 +213,21 @@ kmeansHH <- function(x, nclusters = NULL){
         
         # this cluster will be as df into next iteration
         
-        df <- df_toKeep[df_toKeep$cluster == max_cluster, !(colnames(df_toKeep) %in% c('cluster', 'withinss'))]
+        df <- df_toKeep[df_toKeep$cluster == max_cluster, !(colnames(df_toKeep) %in% c('cluster', 'withinss')), drop = F]
+        
+        print('<<<<<')
+        print(df)
         
       } else {
         
         # on last iteration run k-means with all centroids, without further splits
         
-        last_centroids <- by(df_toKeep[, !(colnames(df_toKeep) %in% c('cluster', 'withinss'))],
+        last_centroids <- by(df_toKeep[, !(colnames(df_toKeep) %in% c('cluster', 'withinss')), drop = F],
                              df_toKeep[, 'cluster'],
                              function(x){sapply(x, mean)})
+        
+        print('last centroids:')
+        print(last_centroids)
         
         last_centroids <- matrix(unlist(last_centroids), ncol = length(df_toKeep) - 2, byrow = T)
         
@@ -178,6 +244,22 @@ kmeansHH <- function(x, nclusters = NULL){
     return(df_toKeep)
     
   } else {
+    
+    # change this part, more structured!!!
+    # set.seed() before sampling
+    # shuffle input dataframe before sampling
+    # nr. of rows to sample proportional to whole dataset unil some treshold
+    # shiluette width growth (1.1) check in other datasets, vs. number of variables to cluster, proportion of factors 
+    #   from all variables, vs. of some index of clusterability
+    # repair 2 bugs
+    # check how it works on dataframe with one variable, or very low rows number
+    
+    # email
+    # how it works
+    # tableau vs. ours (scatterplots)
+    # custom visualisations - violing plot, boxplot, dotplot, barchart, alpha parameter, scatterplot with density,
+    #   regression line, conditional mean, median, histogram (stacked, overlapping), frequency polygons
+    # ordered factor vs. regular dimension clustering difference
     
     if (nrow(df) < 1000){
       
@@ -232,15 +314,28 @@ kmeansHH <- function(x, nclusters = NULL){
       
     } else {
       
-      # one hot encoding of categorical variables
-      # or sample -> gower dist -> PAM -> gower distance of not sampled entrys to medoids of sample
+      # sample -> gower dist -> PAM -> gower distance of not sampled entrys to medoids of sample
+      
+      print('df:')
+      print(str(df))
       
       sampled_rows <- sample.int(nrow(df), 1000)
       
-      df_sampled <- data.frame(df[sampled_rows,], row.names = sampled_rows)
-      df_not_sampled <- data.frame(df[!(row.names(df) %in% row.names(df_sampled)),])
+      df_sampled <- data.frame(df[sampled_rows,], 
+                               row.names = sampled_rows)
+      colnames(df_sampled) <- colnames(df)
+      print('df_sampled:')
+      print(str(df_sampled))
+      
+      df_not_sampled <- data.frame(df[!(row.names(df) %in% row.names(df_sampled)),], 
+                                   row.names = rownames(df)[!(rownames(df) %in% rownames(df_sampled))])
+      colnames(df_not_sampled) <- colnames(df)
+      print('df_not_sampled:')
+      print(str(df_not_sampled))
       
       gower_dist_matrix <- as.matrix(daisy(x = df_sampled, metric = 'gower'))
+      print('gower_dist_matrix:')
+      print(str(gower_dist_matrix))
       
       if (is.null(nclusters)){
         
@@ -269,9 +364,11 @@ kmeansHH <- function(x, nclusters = NULL){
               # and assign cluster number of the nearest medoid
               
               df_sampled_medoids <- df_sampled[pam_fit$medoids, ]
+              print('df_sampled_medoids:')
               print(str(df_sampled_medoids))
+              print('df_not_sampled:')
               print(str(df_not_sampled))
-              not_sampled_dist_medoids <- data.frame(t(gower.dist(data.x = df_sampled_medoids[, colnames(df_sampled_medoids) != 'cluster'],
+              not_sampled_dist_medoids <- data.frame(t(gower.dist(data.x = df_sampled_medoids[, colnames(df_sampled_medoids) != 'cluster', drop = F],
                                                                   data.y = df_not_sampled)),
                                                      row.names = row.names(df_not_sampled))
               colnames(not_sampled_dist_medoids) <- row.names(df_sampled_medoids)
@@ -295,6 +392,25 @@ kmeansHH <- function(x, nclusters = NULL){
         #nclusters <- which(sil_width == max(sil_width)) + 1
         
       }
+      
+      pam_fit <- pam(x = gower_dist_matrix, diss = T, k = nclusters)
+      df_sampled$cluster <- pam_fit$clustering
+      
+      df_sampled_medoids <- df_sampled[pam_fit$medoids, ]
+      print(str(df_sampled_medoids))
+      print(str(df_not_sampled))
+      not_sampled_dist_medoids <- data.frame(t(gower.dist(data.x = df_sampled_medoids[, colnames(df_sampled_medoids) != 'cluster', drop = F],
+                                                          data.y = df_not_sampled)),
+                                             row.names = row.names(df_not_sampled))
+      colnames(not_sampled_dist_medoids) <- row.names(df_sampled_medoids)
+      closest_medoids_rownr <- apply(not_sampled_dist_medoids, 1, function(x){names(x)[x == min(x)]})
+      df_not_sampled$cluster <- mapvalues(x = closest_medoids_rownr,
+                                          from = row.names(df_sampled_medoids),
+                                          to = df_sampled_medoids$cluster)
+      
+      df <- rbind(df_sampled, df_not_sampled)
+      
+      return(df)
       
     }
     
