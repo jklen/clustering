@@ -3,7 +3,7 @@ library(fpc) # calinski-harabasz index
 library(plyr) # mapvalues function
 library(cluster) # daisy, PAM
 library(dummy)
-library(scales)
+library(scales) # rescale
 library(StatMatch) # gower.dist
 library(ggplot2)
 
@@ -44,15 +44,19 @@ kmeansHH <- function(x, nclusters = NULL){
   #   dataframe with input variables, plus additional variable 'cluster' - entry's assigned cluster
   #     and 'withinss' - clusters within sum of squared
   
-  # !!!!!!!!!! if number of UNIQUE rows too low, run standard kmeans
-  
   df <- x
+  df <- na.omit(df)
+  
+  # get min and max values for each integer or numeric variable, for rescaling back before returning final df
+
+  min_values <- sapply(df[sapply(df, function(x) is.numeric(x) | is.integer(x))], min)
+  max_values <- sapply(df[sapply(df, function(x) is.numeric(x) | is.integer(x))], max)
 
   # rescaling variables
   
-  df[sapply(df, is.numeric)] <- lapply(df[sapply(df, is.numeric)], rescale)
-  df[sapply(df, is.integer)] <- lapply(df[sapply(df, is.integer)], rescale)
-  
+  df[sapply(df, function(x) is.numeric(x) | is.integer(x))] <- 
+    lapply(df[sapply(df, function(x) is.numeric(x) | is.integer(x))], rescale)
+
   print('df:')
   print(str(df))
   print(df)
@@ -73,12 +77,37 @@ kmeansHH <- function(x, nclusters = NULL){
     for (i in 1:nclusters){
       
       print(paste(i, ' --------------------------------------------------'))
+      print(df)
       
       variance <- sapply(df, var) # variables variance
+      
+      # too low rows number
+      
+      if (is.na(variance) & (i >= 2)){
+        
+        # rescaling back variables (min_values and max_values have same variable names)
+        
+        df_toKeep[names(min_values)] <- 
+          sapply(names(min_values), function(x){rescale(x = df_toKeep[x], from = c(0, 1), 
+                                                        to = c(min_values[names(min_values) == x], 
+                                                               max_values[names(max_values) == x]))})
+        
+        return(df_toKeep[, colnames(df_toKeep) != 'withinss'])
+        
+      }
+
       print('variance:')
       print(str(variance))
       
       max_var <- variance[variance == max(variance)] # variable with maximum variance
+      
+      # if more variables have same max. variance
+      
+      if (length(max_var) >= 2){
+        
+        max_var <- max_var[1]
+        
+      }
       print('maxvar:')
       print(str(max_var))
       
@@ -118,6 +147,17 @@ kmeansHH <- function(x, nclusters = NULL){
       
       } else {
         
+        print('som kokot')
+        
+        # 2 rows in dataset
+        
+        if (i == 1){
+          
+          df$cluster <- c(1,2)
+          return(df)
+          
+        }
+        
         df$cluster <- max(df_toKeep$cluster) + 1
         df_toKeep[row.names(df_toKeep) %in% row.names(df),] <- df
         
@@ -136,6 +176,15 @@ kmeansHH <- function(x, nclusters = NULL){
         
         df_toKeep$cluster <- km$cluster
         
+        df_toKeep$withinss <- NULL
+        
+        # rescaling back variables (min_values and max_values have same variable names)
+        
+        df_toKeep[names(min_values)] <- 
+          sapply(names(min_values), function(x){rescale(x = df_toKeep[x], from = c(0, 1), 
+                                                        to = c(min_values[names(min_values) == x], 
+                                                               max_values[names(max_values) == x]))})
+        
         return(df_toKeep)
         
       }
@@ -148,6 +197,19 @@ kmeansHH <- function(x, nclusters = NULL){
         
         print('1st iteration:')
         print(df)
+        # 
+        # if (nrow(df) == nrow(x)){
+        #   
+        #   # rescaling back variables (min_values and max_values have same variable names)
+        #   
+        #   df[names(min_values)] <- 
+        #     sapply(names(min_values), function(x){rescale(x = df[x], from = c(0, 1), 
+        #                                                   to = c(min_values[names(min_values) == x], 
+        #                                                          max_values[names(max_values) == x]))})
+        #   
+        #   return(df[, colnames(df) != 'withinss'])
+        #   
+        # }
         
       } else {
         
@@ -191,6 +253,15 @@ kmeansHH <- function(x, nclusters = NULL){
                                            from = unique(df_toKeep$cluster),
                                            to = 1:length(unique(df_toKeep$cluster)))
             
+            df_toKeep$withinss <- NULL
+            
+            # rescaling back variables (min_values and max_values have same variable names)
+            
+            df_toKeep[names(min_values)] <- 
+              sapply(names(min_values), function(x){rescale(x = df_toKeep[x], from = c(0, 1), 
+                                                                 to = c(min_values[names(min_values) == x], 
+                                                                        max_values[names(max_values) == x]))})
+            
             return(df_toKeep)
             
           }
@@ -201,6 +272,21 @@ kmeansHH <- function(x, nclusters = NULL){
       
       if (i < nclusters){
         
+        # when too low nubmer of rows
+        
+        if ((nrow(df) == nrow(df_toKeep)) & (i >= 2)){
+          
+          # rescaling back variables (min_values and max_values have same variable names)
+          
+          df_toKeep[names(min_values)] <- 
+            sapply(names(min_values), function(x){rescale(x = df_toKeep[x], from = c(0, 1), 
+                                                          to = c(min_values[names(min_values) == x], 
+                                                                 max_values[names(max_values) == x]))})
+          
+          return(df_toKeep[, colnames(df_toKeep) != 'withinss'])
+          
+        }
+        
         # get withinss of all clusters in df_toKeep
         
         withinss_byCluster <- by(df_toKeep[, colnames(df_toKeep) == 'withinss'],
@@ -210,6 +296,8 @@ kmeansHH <- function(x, nclusters = NULL){
         # get cluster with highest withinss
         
         max_cluster <- names(sapply(withinss_byCluster, max)[sapply(withinss_byCluster, max) == max(sapply(withinss_byCluster, max))])
+        print('max cluster:')
+        print(max_cluster)
         
         # this cluster will be as df into next iteration
         
@@ -236,30 +324,30 @@ kmeansHH <- function(x, nclusters = NULL){
         
         df_toKeep$cluster <- km$cluster
         
+        df_toKeep$withinss <- NULL
+        
         
       }
       
     }
+    
+    # rescaling back variables (min_values and max_values have same variable names)
+    
+    df_toKeep[names(min_values)] <- 
+      sapply(names(min_values), function(x){rescale(x = df_toKeep[x], from = c(0, 1), 
+                                                    to = c(min_values[names(min_values) == x], 
+                                                           max_values[names(max_values) == x]))})
     
     return(df_toKeep)
     
   } else {
     
     # change this part, more structured!!!
-    # set.seed() before sampling
     # shuffle input dataframe before sampling
     # nr. of rows to sample proportional to whole dataset unil some treshold
     # shiluette width growth (1.1) check in other datasets, vs. number of variables to cluster, proportion of factors 
     #   from all variables, vs. of some index of clusterability
-    # repair 2 bugs
-    # check how it works on dataframe with one variable, or very low rows number
-    
-    # email
-    # how it works
-    # tableau vs. ours (scatterplots)
-    # custom visualisations - violing plot, boxplot, dotplot, barchart, alpha parameter, scatterplot with density,
-    #   regression line, conditional mean, median, histogram (stacked, overlapping), frequency polygons
-    # ordered factor vs. regular dimension clustering difference
+
     
     if (nrow(df) < 1000){
       
@@ -274,6 +362,10 @@ kmeansHH <- function(x, nclusters = NULL){
         sil_width <- numeric()
         
         nclusters <- 10
+        
+        # too low row number
+        
+        nclusters <- ifelse(nclusters >= nrow(df), nrow(df) - 1, nclusters)
         
         for (i in 2:nclusters){
           
@@ -292,6 +384,13 @@ kmeansHH <- function(x, nclusters = NULL){
               pam_fit <- pam(x = gower_dist_matrix, diss = T, k = nclusters)
               df$cluster <- pam_fit$clustering
               
+              # rescaling back variables (min_values and max_values have same variable names)
+              
+              df[names(min_values)] <- 
+                sapply(names(min_values), function(x){rescale(x = df[x], from = c(0, 1), 
+                                                              to = c(min_values[names(min_values) == x], 
+                                                                     max_values[names(max_values) == x]))})
+              
               return(df)
               
             }
@@ -306,8 +405,20 @@ kmeansHH <- function(x, nclusters = NULL){
         
       }
       
+      # too low row number
+      
+      nclusters <- ifelse(nclusters >= nrow(df), nrow(df) - 1, nclusters)
+      print(nclusters)
+      
       pam_fit <- pam(x = gower_dist_matrix, diss = T, k = nclusters)
       df$cluster <- pam_fit$clustering
+      
+      # rescaling back variables (min_values and max_values have same variable names)
+      
+      df[names(min_values)] <- 
+        sapply(names(min_values), function(x){rescale(x = df[x], from = c(0, 1), 
+                                                      to = c(min_values[names(min_values) == x], 
+                                                             max_values[names(max_values) == x]))})
       
       return(df)
       
@@ -318,6 +429,8 @@ kmeansHH <- function(x, nclusters = NULL){
       
       print('df:')
       print(str(df))
+      
+      set.seed(888)
       
       sampled_rows <- sample.int(nrow(df), 1000)
       
@@ -342,6 +455,10 @@ kmeansHH <- function(x, nclusters = NULL){
         sil_width <- numeric()
         
         nclusters <- 10
+        
+        # too low rows number
+        
+        nclusters <- ifelse(nclusters >= nrow(df), nrow(df) - 1, nclusters)
         
         for (i in 2:nclusters){
           
@@ -373,11 +490,23 @@ kmeansHH <- function(x, nclusters = NULL){
                                                      row.names = row.names(df_not_sampled))
               colnames(not_sampled_dist_medoids) <- row.names(df_sampled_medoids)
               closest_medoids_rownr <- apply(not_sampled_dist_medoids, 1, function(x){names(x)[x == min(x)]})
+              
+              print('x to mapvalues - closest_medoids_rownr:')
+              print(closest_medoids_rownr)
+              
               df_not_sampled$cluster <- mapvalues(x = closest_medoids_rownr,
                                                   from = row.names(df_sampled_medoids),
                                                   to = df_sampled_medoids$cluster)
               
               df <- rbind(df_sampled, df_not_sampled)
+              df <- df[order(as.integer(row.names(df))),]
+              
+              # rescaling back variables (min_values and max_values have same variable names)
+              
+              df[names(min_values)] <- 
+                sapply(names(min_values), function(x){rescale(x = df[x], from = c(0, 1), 
+                                                              to = c(min_values[names(min_values) == x], 
+                                                                     max_values[names(max_values) == x]))})
               
               return(df)
               
@@ -393,6 +522,10 @@ kmeansHH <- function(x, nclusters = NULL){
         
       }
       
+      # too low rows number
+      
+      nclusters <- ifelse(nclusters >= nrow(df), nrow(df) - 1, nclusters)
+      
       pam_fit <- pam(x = gower_dist_matrix, diss = T, k = nclusters)
       df_sampled$cluster <- pam_fit$clustering
       
@@ -403,12 +536,38 @@ kmeansHH <- function(x, nclusters = NULL){
                                                           data.y = df_not_sampled)),
                                              row.names = row.names(df_not_sampled))
       colnames(not_sampled_dist_medoids) <- row.names(df_sampled_medoids)
+      
+      print('not sampled dist medoids:')
+      print(not_sampled_dist_medoids)
+      
       closest_medoids_rownr <- apply(not_sampled_dist_medoids, 1, function(x){names(x)[x == min(x)]})
+      
+      # in case an entry has same distance to more medoids, take first one and change to vector
+      
+      if (class(closest_medoids_rownr) == 'list'){
+        
+        closest_medoids_rownr <- sapply(closest_medoids_rownr, '[[', 1)
+        
+      }
+      
+      print('x to mapvalues - closest_medoids_rownr:')
+      print(closest_medoids_rownr)
+      #return(closest_medoids_rownr)
+      
       df_not_sampled$cluster <- mapvalues(x = closest_medoids_rownr,
                                           from = row.names(df_sampled_medoids),
                                           to = df_sampled_medoids$cluster)
       
       df <- rbind(df_sampled, df_not_sampled)
+      
+      df <- df[order(as.integer(row.names(df))),]
+      
+      # rescaling back variables (min_values and max_values have same variable names)
+      
+      df[names(min_values)] <- 
+        sapply(names(min_values), function(x){rescale(x = df[x], from = c(0, 1), 
+                                                      to = c(min_values[names(min_values) == x], 
+                                                             max_values[names(max_values) == x]))})
       
       return(df)
       
